@@ -7,17 +7,18 @@ pub struct GpuState {
     // Device information
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 
     // Texture information
     //grid_texture_rgba: &'a image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, TODO: Get better at lifetimes.
+    pub dimensions: (u32, u32),
     grid_texture: wgpu::Texture,
     grid_texture_view: wgpu::TextureView,
-    line_texture: wgpu::Texture,
+    pub line_texture: wgpu::Texture,
     line_texture_view: wgpu::TextureView,
 
-    num_segments: u32,
+    pub num_segments: u32,
 
     texture_sampler: wgpu::Sampler,
 
@@ -30,7 +31,7 @@ pub struct GpuState {
     display_shader_module: wgpu::ShaderModule,
 
     // Pipelines
-    compute_pipeline: wgpu::ComputePipeline,
+    pub compute_pipeline: wgpu::ComputePipeline,
     display_pipeline: wgpu::RenderPipeline
 }
 
@@ -236,6 +237,7 @@ async fn construct_gpu_state(num_segments: u32) -> GpuState {
         queue,
 
 //      grid_texture_rgba,
+        dimensions,
         grid_texture,
         grid_texture_view,
         line_texture,
