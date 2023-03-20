@@ -47,7 +47,7 @@ fn dynamic_command(generator: args::Generator, in_path: PathBuf, out_path: PathB
     let width = input_image.width;
     let height = input_image.height;
 
-    let stencil_buffer = generators::generate_stencil(width as usize, height as usize, generator);
+    let stencil_buffer = generators::generate_stencil(width, height, generator);
     let stencil_image = generators::stencil_to_raw_image(&stencil_buffer, width, height);
 
     let out_image = stenciler::cpu_pipeline(&stencil_image, &input_image);

@@ -69,10 +69,10 @@ pub enum Generator{
 
 #[derive(Debug, Args)]
 pub struct SquareGridCommand{
-    pub side_length: usize
+    pub side_length: u32
 }
 
 #[derive(Debug, Args)]
 pub struct CircleGridCommand{
-    pub radius: usize
+    pub radius: u32
 }

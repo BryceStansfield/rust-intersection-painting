@@ -1,0 +1,1 @@
+Replace most usize's with u32's for speedup. Will profile first.
