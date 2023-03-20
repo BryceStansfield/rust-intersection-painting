@@ -14,16 +14,16 @@ pub struct GpuState {
     //grid_texture_rgba: &'a image::ImageBuffer<image::Rgba<u8>, Vec<u8>>, TODO: Get better at lifetimes.
     pub dimensions: (u32, u32),
     grid_texture: wgpu::Texture,
-    grid_texture_view: wgpu::TextureView,
+    pub grid_texture_view: wgpu::TextureView,
     pub line_texture: wgpu::Texture,
-    line_texture_view: wgpu::TextureView,
+    pub line_texture_view: wgpu::TextureView,
 
     pub num_segments: u32,
 
-    texture_sampler: wgpu::Sampler,
+    pub texture_sampler: wgpu::Sampler,
 
     // Bind Group Layouts
-    compute_bind_group_layout: wgpu::BindGroupLayout,
+    pub compute_bind_group_layout: wgpu::BindGroupLayout,
     display_bind_group_layout: wgpu::BindGroupLayout,
 
     // Shaders
