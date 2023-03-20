@@ -1,20 +1,28 @@
 use core::fmt;
+use std::path::PathBuf;
 
-use image;
+use crate::{RawImage, args, save_buffer_as_image};
 
-fn main() {
-    let container = generate_circle_grid(1155, 2048, 10);
-    let image = container_to_image_buffer(container, 1155, 2048);
-    image.save("Priya_Dino_Circles.png");
+// Commands
+pub fn generate_and_save_stencil(width: u32, height: u32, out_path: PathBuf, generator: args::Generator){
+    let mut buffer = generate_stencil(width as usize, height as usize, generator);
+    save_buffer_as_image(buffer, width, height, out_path);
+}
+
+pub fn generate_stencil(width: usize, height: usize, generator: args::Generator) -> Vec<u8>{
+    match generator{
+        args::Generator::SquareGrid(args::SquareGridCommand{side_length: s}) => generate_square_grid(width, height, s, 0),
+        args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, r),
+    }
+}
+
+pub (crate) fn stencil_to_raw_image(stencil: &Vec<u8>, width: u32, height: u32) -> RawImage{
+    RawImage { skip: 3, width: width, height: height, data: stencil, has_alpha: false }
 }
 
 // Utility Functions
 fn segment_index_to_rgb(ind: usize) -> (u8, u8, u8){
     return ((ind % 256) as u8, ((ind / 256) % 256) as u8, (ind / 65536) as u8);
-}
-
-fn container_to_image_buffer(v: Vec<u8>, width: u32, height: u32) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>>{
-    return image::ImageBuffer::from_raw(width, height, v).expect("Container not large enough");
 }
 
 // Generators

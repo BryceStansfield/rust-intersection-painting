@@ -1,36 +1,78 @@
 use std::{sync::Arc, path::Path, ops::Bound, fmt, iter, result};
+use std::path::PathBuf;
 use itertools::Itertools;
 use image::{io::Reader as ImageReader, DynamicImage};
+use clap::Parser;
+
+mod generators;
+mod args;
+mod stenciler;
 
 fn main(){
-    let background_path = Path::new("E:\\github\\wgpu-intersection-painting\\wgpu-intersection-painting\\src\\test_images\\circle_image_test.png");
-    let grid_image = get_image(background_path);
-    let raw_grid_image = decompose_image(&grid_image);
-    let line_path = Path::new("E:\\github\\wgpu-intersection-painting\\wgpu-intersection-painting\\src\\test_images\\157292-top-minecraft-shaders-background-1920x1080-large-resolution.jpg");
-    let line_image = get_image(line_path);
-    let raw_line_image = decompose_image(&line_image);
-    let bbs = draw_bounding_boxes(&raw_grid_image);
-
-    //print!("{:?}", bbs);
-
-    let averages = cpu_averager(&raw_grid_image, &bbs, &raw_line_image);
-
-    let raw_buffer = cpu_render_to_buffer(&raw_grid_image, &averages);
-    let result_image_buffer: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> = image::ImageBuffer::from_raw(raw_grid_image.width, raw_grid_image.height, raw_buffer).expect("This is a test run, so I don't care if it panics!");
-    let result_path = Path::new("E:\\github\\wgpu-intersection-painting\\wgpu-intersection-painting\\src\\test_images\\circle_result.png");
-    let result = result_image_buffer.save(result_path);
+    run_cmdline();
 }
 
-fn get_image(path: &Path) -> DynamicImage{
-    return ImageReader::open(path).expect("").decode().expect("");
+fn run_cmdline(){
+    let arguments = args::Arguments::parse();
+
+    match arguments.command_type{
+        args::GeneratorType::GenerateStencil(args::GenerateStencilCommand{width: w, height: h, output: out, generator: g}) => generators::generate_and_save_stencil(w, h, out, g),
+        args::GeneratorType::Static(args::StaticCommand{stencil: s, output: out_path, input: in_path}) => static_command(s, in_path, out_path),
+        args::GeneratorType::Dynamic(args::DynamicCommand{input: in_path, output: out_path, generator: g}) => dynamic_command(g, in_path, out_path)
+    }
 }
 
-fn rgb_to_index(r: u8, g: u8, b: u8) -> usize{
-    return (r as usize) + (g as usize) * 256 + (b as usize) * 256 * 256;
+fn help(){
+    println!("Usage:
+    intersection_painter dynamic <generator_name_str> <input_path> <output_path>
+    or intersection_painter stencil <stencil_path> <input_path> <output_path>")
+}
+
+// Command functions
+fn static_command(stencil: PathBuf, in_path: PathBuf, out_path: PathBuf){
+    let stencil_dyn = get_image(stencil);
+    let stencil_image = decompose_image(&stencil_dyn);
+    let input_dyn = get_image(in_path);
+    let input_image = decompose_image(&input_dyn);
+
+    let out_image = stenciler::cpu_pipeline(&stencil_image, &input_image);
+    save_buffer_as_image(out_image, stencil_image.width, stencil_image.height, out_path);
+}
+
+// Command functions
+fn dynamic_command(generator: args::Generator, in_path: PathBuf, out_path: PathBuf){
+    let input_dyn = get_image(in_path);
+    let input_image = decompose_image(&input_dyn);
+
+    let width = input_image.width;
+    let height = input_image.height;
+
+    let stencil_buffer = generators::generate_stencil(width as usize, height as usize, generator);
+    let stencil_image = generators::stencil_to_raw_image(&stencil_buffer, width, height);
+
+    let out_image = stenciler::cpu_pipeline(&stencil_image, &input_image);
+    save_buffer_as_image(out_image, stencil_image.width, stencil_image.height, out_path);
+}
+
+
+// Image saving functions
+fn container_to_image_buffer(v: Vec<u8>, width: u32, height: u32) -> image::ImageBuffer<image::Rgb<u8>, Vec<u8>>{
+    return image::ImageBuffer::from_raw(width, height, v).expect("Container not large enough");
+}
+
+fn save_buffer_as_image(image: Vec<u8>, width: u32, height: u32, out_path: PathBuf){
+    let image = container_to_image_buffer(image, width, height);
+    image.save(out_path).expect("Image didn't save");
+}
+
+fn get_image<P>(path: P) -> DynamicImage
+    where P: AsRef<Path>
+{
+    return ImageReader::open(path).expect("").decode().expect("");  // TODO: Fix these excepts...
 }
 
 // Decomposes an image into (skip, (width, height), pixel_buffer)
-struct RawImage<'a>{
+pub struct RawImage<'a>{
     skip: usize,       // How far between sets of RGB values?
     width: u32,
     height: u32,
@@ -52,111 +94,3 @@ fn decompose_image(im: &DynamicImage) -> RawImage{
     };
 }
 
-fn cpu_averager(grid_image: &RawImage, bounding_boxes: &Vec<BoundingBox>, line_image: &RawImage) -> Vec<u8>{
-    let mut sum_vec: Vec<u64> = vec![0; bounding_boxes.len() * 3];
-    let mut count_vec: Vec<u32> = vec![0; bounding_boxes.len()];
-
-    let mut grid_index: usize = 0;
-    let mut line_index: usize = 0;
-    
-    for y in 0..grid_image.height{
-        for x in 0..grid_image.width{
-            let segment_index = rgb_to_index(grid_image.data[grid_index], grid_image.data[grid_index + 1], grid_image.data[grid_index + 2]);
-            let sum_index = segment_index * 3;
-            grid_index += grid_image.skip;
-
-            if !line_image.has_alpha || line_image.data[line_index + 3] == 255{       // I don't want to deal with partial transparency just yet
-                sum_vec[sum_index] += line_image.data[line_index] as u64;
-                sum_vec[sum_index + 1] += line_image.data[line_index + 1] as u64;
-                sum_vec[sum_index + 2] += line_image.data[line_index + 2] as u64;
-                count_vec[segment_index] += 1;
-            }
-            line_index += line_image.skip;
-        }
-    }
-
-    // TODO: Are iterators too slow for my usecase?
-    return iter::zip(sum_vec.chunks(3), count_vec).flat_map(|(sum, count)| {
-        if count == 0{
-            return [0, 0, 0];
-        }
-        return [(sum[0]/(count as u64)) as u8, (sum[1]/(count as u64)) as u8, (sum[2]/(count as u64)) as u8];
-    }).collect();
-}
-
-fn cpu_render_to_buffer(grid_image: &RawImage, averages: &Vec<u8>) -> Vec<u8> {
-    let mut ret_vector = vec![0 as u8; (grid_image.width as usize) * (grid_image.height as usize) * 3];
-
-    let mut grid_index = 0;
-    let mut ret_index = 0;
-    
-    for y in 0..grid_image.height{
-        for x in 0..grid_image.width{
-            let segment_index = rgb_to_index(grid_image.data[grid_index], grid_image.data[grid_index+1], grid_image.data[grid_index+2]) * 3;
-            grid_index += grid_image.skip;
-
-            ret_vector[ret_index] = averages[segment_index];
-            ret_vector[ret_index + 1] = averages[segment_index + 1];
-            ret_vector[ret_index + 2] = averages[segment_index + 2];
-            ret_index += 3;
-        }
-    }
-
-    return ret_vector
-}
-
-fn draw_bounding_boxes(image: &RawImage) -> Vec<BoundingBox>{
-    // Time to build our bounding boxes!
-    // Bounds checks should be cheaper than integer modulus, so I'm looping over x,y
-    let mut cur_ind: usize = 0;
-    let mut bounding_boxes: Vec<Option<BoundingBox>> = vec!();
-
-    for y in 0..image.height{
-        for x in 0..image.width{
-            let index = rgb_to_index(image.data[cur_ind], image.data[cur_ind + 1], image.data[cur_ind + 2]);
-            cur_ind += image.skip;
-
-            while index >= bounding_boxes.len(){
-                bounding_boxes.push(None);
-            }
-
-            if let Some(bb_opt) = bounding_boxes.get_mut(index){
-                match bb_opt{
-                    Some(bb) => {
-                        // This is ugly, should figure out how to fix it.
-                        if bb.top > y{
-                            bb.top = y
-                        }
-                        else if bb.bot < y{
-                            bb.bot = y
-                        }
-                        
-                        if bb.left > x{
-                            bb.left = x
-                        }
-                        else if bb.right < x{
-                            bb.right = x
-                        }
-                    },
-                    None => *bb_opt = Some(BoundingBox{top: y, bot: y, left: x, right: x})  
-                }
-            }
-        }
-    }
-
-    return bounding_boxes.iter().map(|x| {
-        match x{
-            Some(bb) => *bb,
-            None => panic!("Not all indicies have been defined"),
-        }
-    }).collect();
-}
-
-// Using the default height/width type for the image library
-#[derive(Copy, Clone, fmt::Debug)]
-struct BoundingBox{
-    top: u32,
-    bot: u32,
-    left: u32,
-    right: u32
-}
