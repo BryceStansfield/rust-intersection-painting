@@ -24,10 +24,10 @@ pub enum GeneratorType{
 
 #[derive(Debug, Args)]
 pub struct DynamicCommand{
-    /// Input Path
+    /// Input Path, folder or file
     pub input: PathBuf,
 
-    /// Output Path
+    /// Output Path, folder or file
     pub output: PathBuf,
 
     #[clap(subcommand)]
@@ -65,6 +65,7 @@ pub struct GenerateStencilCommand{
 pub enum Generator{
     SquareGrid(SquareGridCommand),
     CircleGrid(CircleGridCommand),
+    CrossGrid(CrossGridCommand)
 }
 
 #[derive(Debug, Args)]
@@ -75,4 +76,9 @@ pub struct SquareGridCommand{
 #[derive(Debug, Args)]
 pub struct CircleGridCommand{
     pub radius: u32
+}
+
+#[derive(Debug, Args)]
+pub struct CrossGridCommand{
+    pub cross_intersection_width: u32
 }

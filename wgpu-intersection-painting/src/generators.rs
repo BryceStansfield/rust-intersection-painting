@@ -1,24 +1,26 @@
 use core::fmt;
 use std::path::PathBuf;
-use num::Integer;
 
-use crate::{RawImage, args, save_buffer_as_image};
+use crate::{RawImage, args, save_raw_image};
 
 // Commands
 pub fn generate_and_save_stencil(width: u32, height: u32, out_path: PathBuf, generator: args::Generator){
-    let mut buffer = generate_stencil(width, height, generator);
-    save_buffer_as_image(buffer, width, height, out_path);
+    let buffer = generate_stencil(width, height, &generator);
+    save_raw_image(buffer, out_path);
 }
 
-pub fn generate_stencil(width: u32, height: u32, generator: args::Generator) -> Vec<u8>{
-    match generator{
-        args::Generator::SquareGrid(args::SquareGridCommand{side_length: s}) => generate_square_grid(width, height, s, 0),
-        args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, r),
+pub fn generate_stencil(width: u32, height: u32, generator: &args::Generator) -> RawImage{
+    RawImage{
+        skip: 3,
+        width,
+        height,
+        data: match generator{
+            args::Generator::SquareGrid(args::SquareGridCommand{side_length: s}) => generate_square_grid(width, height, *s, 0),
+            args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, *r),
+            args::Generator::CrossGrid(args::CrossGridCommand{cross_intersection_width}) => generate_cross_grid(width, height, *cross_intersection_width)
+        },
+        has_alpha: false
     }
-}
-
-pub (crate) fn stencil_to_raw_image(stencil: &Vec<u8>, width: u32, height: u32) -> RawImage{
-    RawImage { skip: 3, width: width, height: height, data: stencil, has_alpha: false }
 }
 
 // Utility Functions
@@ -85,7 +87,7 @@ fn generate_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
             f_y: f32,
         }
 
-        fn pairFromFloats(x: f32, y: f32) -> UintFloatPositionPair{
+        fn pair_from_floats(x: f32, y: f32) -> UintFloatPositionPair{
             UintFloatPositionPair { u_x: x as u32, u_y: y as u32, f_x: x, f_y: y }
         }
 
@@ -106,7 +108,7 @@ fn generate_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
             }
         }
 
-        let mut cur_pos = pairFromFloats(f_radius, 0 as f32);        // Starting at the top
+        let mut cur_pos = pair_from_floats(f_radius, 0 as f32);        // Starting at the top
 
         fn fill_circle_at(cur_pos: UintFloatPositionPair, radius: u32, v: &mut Vec<Vec<bool>>){
             draw_line_between(cur_pos.u_y, 2*radius - cur_pos.u_y, cur_pos.u_x, v);      // mid right
@@ -122,13 +124,13 @@ fn generate_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
             // Now let's move counterclockwise.
             let right_square_dist = (cur_pos.f_x - f_radius + 1.0).powi(2);
             if right_square_dist + (cur_pos.f_y - f_radius).powi(2) <= f_r_2{
-                cur_pos = pairFromFloats(cur_pos.f_x + 1.0, cur_pos.f_y)
+                cur_pos = pair_from_floats(cur_pos.f_x + 1.0, cur_pos.f_y)
             }
             else if right_square_dist + (cur_pos.f_y - f_radius + 1.0).powi(2) <= f_r_2{
-                cur_pos = pairFromFloats(cur_pos.f_x + 1.0, cur_pos.f_y + 1.0)
+                cur_pos = pair_from_floats(cur_pos.f_x + 1.0, cur_pos.f_y + 1.0)
             }
             else{
-                cur_pos = pairFromFloats(cur_pos.f_x, cur_pos.f_y + 1.0)
+                cur_pos = pair_from_floats(cur_pos.f_x, cur_pos.f_y + 1.0)
             }
 
             if (cur_pos.u_x - radius) < cur_pos.u_y {        // 45deg angle
@@ -144,44 +146,49 @@ fn generate_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
 
     // Now let's copy this stencil all over the image.
     let mut squares = generate_square_grid(width, height, circle.len() as u32, 1);
-    let mut circle_mask = repeat_stencil_to_mask(circle, width, height);
+    let circle_mask = repeat_stencil_to_mask(circle, width, height);
 
     mask_container(circle_mask, (0, 0, 0), &mut squares).expect("Error masking");
     return squares
 }
 
-fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32){
+fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -> Vec<u8>{
     let mut container = vec![0 as u8; (width as usize) * (height as usize) * 3];
-    /* let grid_width = width.div_ceil(cross_intersection_width); Not stabilized yet :'(
-    let grid_height = height.div_ceil(cross_intersection_width); */
+    let grid_width = num::Integer::div_ceil(&width, &cross_intersection_width);
+    let grid_height = num::Integer::div_ceil(&height, &cross_intersection_width);
 
-    let fill_cell = |cell_x: u32, cell_y: u32, index: u32| {
-        if cell_x < 0 || cell_x >= grid_width{
+    let cell_in_grid = |cell_x: i32, cell_y: i32|{
+        return (cell_x >= 0 && (cell_x as u32) < grid_width) && (cell_y >= 0 && (cell_y as u32) < grid_height);
+    };
+
+    let mut fill_cell = |cell_x: i32, cell_y: i32, index: u32| {
+        if !cell_in_grid(cell_x, cell_y){
             return;
         }
-        if cell_y < 0 || cell_y >= grid_height{
+
+        let u_cell_x = cell_x as u32;
+        let u_cell_y = cell_y as u32;
+
+        if u_cell_x >= grid_width || u_cell_y >= grid_height{
             return;
         }
 
-        let start_x = cell_x * cross_intersection_width;
-        let start_y = cell_y * cross_intersection_width;
+        let start_x = u_cell_x * cross_intersection_width;
+        let start_y = u_cell_y * cross_intersection_width;
 
         let index_pixels = segment_index_to_rgb(index);
-
-        let start_posn = start_x + width * start_y;
 
         for x in 0..cross_intersection_width{
             for y in 0..cross_intersection_width{
                 let cur_x = start_x + x;
-                if cur_x < 0 || cur_x >= width{
+                if cur_x >= width{
                     continue;
                 }
 
                 let cur_y = start_y + y;
-                if cur_y < 0 || cur_y >= height{
+                if cur_y >= height{
                     continue;
                 }
-
 
                 container[((cur_x + width * cur_y) * 3) as usize] = index_pixels.0;
                 container[((cur_x + width * cur_y) * 3 + 1) as usize] = index_pixels.1;
@@ -190,12 +197,76 @@ fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32){
         }
     };
 
-    let fill_cross = |cell_x: u32, cell_y: u32, index: u32|{
+    let mut fill_cross = |cell_x: i32, cell_y: i32, index: u32|{
+        fill_cell(cell_x - 1, cell_y, index);
+        fill_cell(cell_x + 1, cell_y, index);
+        fill_cell(cell_x, cell_y -1, index);
+        fill_cell(cell_x, cell_y + 1, index);
+        fill_cell(cell_x, cell_y, index);
+    };
 
+    let cross_touching_grid = |cell_x: i32, cell_y: i32|{
+        return cell_in_grid(cell_x - 1, cell_y) || cell_in_grid(cell_x + 1, cell_y) || cell_in_grid(cell_x, cell_y - 1) || cell_in_grid(cell_x, cell_y + 1) || cell_in_grid(cell_x, cell_y);
+    };
+
+    let mut fill_diag = |start_cell_x: i32, start_cell_y: i32, start_index: u32|{
+        // Assumes that the starting position is in the grid.
+        let mut index = start_index;
+        let mut cell_x = start_cell_x;
+        let mut cell_y = start_cell_y;
+
+
+        while cross_touching_grid(cell_x, cell_y){
+            fill_cross(cell_x, cell_y, index);
+            index += 1;
+            cell_x += 2;
+            cell_y += 1;
+        }
+
+        return index;
+    };
+
+    // Let's start with the top row:
+    let mut index = 0;
+    let mut cell_x = 0;
+    let mut cell_y = 0;
+    
+    loop{
+        index = fill_diag(cell_x, cell_y, index);
+
+        if cell_in_grid(cell_x, cell_y){
+            cell_x += 3;
+            cell_y -= 1;
+        }
+        else if cell_in_grid(cell_x, cell_y + 1){
+            cell_x += 2;
+            cell_y += 1;
+        }
+        else{
+            break;
+        }
     }
 
-    let mut index = 0;
+    // Now let's loop through the left column:
+    cell_x = -1;
+    cell_y = 2;
+    loop{
+        index = fill_diag(cell_x, cell_y, index);
 
+        if cell_in_grid(cell_x, cell_y){
+            cell_x -= 1;
+            cell_y += 2;
+        }
+        else if cell_in_grid(cell_x + 1, cell_y){
+            cell_x += 1;
+            cell_y += 3;
+        }
+        else{
+            break;
+        }
+    }
+
+    return container;
 }
 
 
@@ -235,8 +306,4 @@ fn mask_container(bool_mask: Vec<bool>, false_value: (u8,u8, u8), container: &mu
     }
 
     return Ok(());
-}
-
-fn shitty_div_ceil<N: Integer>(a: N, b: N) -> N{
-    
 }
