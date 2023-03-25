@@ -1,5 +1,6 @@
 use std::fmt;
-use crate::RawImage;
+use crate::image_tools::RawImage;
+use crate::generators::BYTES_PER_PIXEL;
 use std::iter;
 
 // Utilities:
@@ -8,15 +9,16 @@ pub (in crate) fn rgb_to_index(r: u8, g: u8, b: u8) -> usize{
 }
 
 // CPU Pipeline
-pub fn cpu_pipeline(grid_image: &RawImage, line_image: &RawImage) -> RawImage{
+pub fn cpu_pipeline(grid_image: &RawImage, alpha_averaging: bool, line_image: &RawImage) -> RawImage{
     if grid_image.width != line_image.width || grid_image.height != line_image.height{
         panic!("Grid Image Dims ({}, {}) != Line Image Dims ({}, {})", grid_image.width, grid_image.height, line_image.width, line_image.height);
     }
 
     let num_segments = count_segments(grid_image);
-    let averages =  cpu_averager(grid_image, num_segments, line_image);
+    let averages =  cpu_averager(grid_image, num_segments, alpha_averaging, line_image);
     let buffer = cpu_render_to_buffer(grid_image, &averages);
-    return RawImage { skip: 3, width: grid_image.width, height: grid_image.height, data: buffer, has_alpha: false }
+
+    return RawImage { width: grid_image.width, height: grid_image.height, data: buffer }
 }
 
 fn count_segments(image: &RawImage) -> usize{
@@ -27,7 +29,7 @@ fn count_segments(image: &RawImage) -> usize{
         for _x in 0..image.width{
             let segment_index = rgb_to_index(image.data[im_index], image.data[im_index+1], image.data[im_index+2]);
 
-            im_index += image.skip; 
+            im_index += BYTES_PER_PIXEL as usize; 
             if segment_index > max{
                 max = segment_index;
             }
@@ -37,8 +39,8 @@ fn count_segments(image: &RawImage) -> usize{
     return max + 1;
 }
 
-fn cpu_averager(grid_image: &RawImage, num_segments: usize, line_image: &RawImage) -> Vec<u8>{
-    let mut sum_vec: Vec<u64> = vec![0; num_segments * 3];
+fn cpu_averager(grid_image: &RawImage, num_segments: usize, alpha_averaging: bool, line_image: &RawImage) -> Vec<u8>{
+    let mut sum_vec: Vec<u64> = vec![0; num_segments * 4];
     let mut count_vec: Vec<u32> = vec![0; num_segments];
 
     let mut grid_index: usize = 0;
@@ -47,43 +49,54 @@ fn cpu_averager(grid_image: &RawImage, num_segments: usize, line_image: &RawImag
     for _y in 0..grid_image.height{
         for _x in 0..grid_image.width{
             let segment_index = rgb_to_index(grid_image.data[grid_index], grid_image.data[grid_index + 1], grid_image.data[grid_index + 2]);
-            let sum_index = segment_index * 3;
-            grid_index += grid_image.skip;
+            let sum_index = segment_index * 4;
+            grid_index += BYTES_PER_PIXEL as usize;
 
-            if !line_image.has_alpha || line_image.data[line_index + 3] == 255{       // I don't want to deal with partial transparency just yet
+            if alpha_averaging{
                 sum_vec[sum_index] += line_image.data[line_index] as u64;
                 sum_vec[sum_index + 1] += line_image.data[line_index + 1] as u64;
                 sum_vec[sum_index + 2] += line_image.data[line_index + 2] as u64;
-                count_vec[segment_index] += 1;
+                sum_vec[sum_index + 3] += line_image.data[line_index + 3] as u64;
+                count_vec[segment_index] += 1
             }
-            line_index += line_image.skip;
+            else{
+                if line_image.data[line_index + 3] != 255{
+                    sum_vec[sum_index] += line_image.data[line_index] as u64;
+                    sum_vec[sum_index + 1] += line_image.data[line_index + 1] as u64;
+                    sum_vec[sum_index + 2] += line_image.data[line_index + 2] as u64;
+                    count_vec[segment_index] += 1
+                }
+            }
+            
+            line_index += BYTES_PER_PIXEL as usize;
         }
     }
 
     // TODO: Are iterators too slow for my usecase?
-    return iter::zip(sum_vec.chunks(3), count_vec).flat_map(|(sum, count)| {
+    return iter::zip(sum_vec.chunks(4), count_vec).flat_map(|(sum, count)| {
         if count == 0{
-            return [0, 0, 0];
+            return [0, 0, 0, 255];
         }
-        return [(sum[0]/(count as u64)) as u8, (sum[1]/(count as u64)) as u8, (sum[2]/(count as u64)) as u8];
+        return [(sum[0]/(count as u64)) as u8, (sum[1]/(count as u64)) as u8, (sum[2]/(count as u64)) as u8, (sum[3]/(count as u64)) as u8];
     }).collect();
 }
 
 fn cpu_render_to_buffer(grid_image: &RawImage, averages: &Vec<u8>) -> Vec<u8> {
-    let mut ret_vector = vec![0 as u8; (grid_image.width as usize) * (grid_image.height as usize) * 3];
+    let mut ret_vector = vec![0 as u8; (grid_image.width as usize) * (grid_image.height as usize) * BYTES_PER_PIXEL as usize];
 
     let mut grid_index = 0;
     let mut ret_index = 0;
     
     for _y in 0..grid_image.height{
         for _x in 0..grid_image.width{
-            let segment_index = rgb_to_index(grid_image.data[grid_index], grid_image.data[grid_index+1], grid_image.data[grid_index+2]) * 3;
-            grid_index += grid_image.skip;
+            let segment_index = rgb_to_index(grid_image.data[grid_index], grid_image.data[grid_index+1], grid_image.data[grid_index+2]) * BYTES_PER_PIXEL as usize;
+            grid_index += BYTES_PER_PIXEL as usize;
 
             ret_vector[ret_index] = averages[segment_index];
             ret_vector[ret_index + 1] = averages[segment_index + 1];
             ret_vector[ret_index + 2] = averages[segment_index + 2];
-            ret_index += 3;
+            ret_vector[ret_index + 3] = averages[segment_index + 3];
+            ret_index += BYTES_PER_PIXEL as usize;
         }
     }
 
@@ -91,6 +104,12 @@ fn cpu_render_to_buffer(grid_image: &RawImage, averages: &Vec<u8>) -> Vec<u8> {
 }
 
 // GPU Pipeline: TODO: Complete.
+/*pub fn gpu_pipeline(grid_image: &RawImage, line_image: &RawImage) -> RawImage{
+    let bbs = draw_bounding_boxes(grid_image);
+
+}*/
+
+
 // Using the default height/width type for the image library
 #[derive(Copy, Clone, fmt::Debug)]
 struct BoundingBox{
@@ -106,11 +125,12 @@ fn draw_bounding_boxes(image: &RawImage) -> Vec<BoundingBox>{
     // Bounds checks should be cheaper than integer modulus, so I'm looping over x,y
     let mut cur_ind: usize = 0;
     let mut bounding_boxes: Vec<Option<BoundingBox>> = vec!();
+    let mut max_bb_size: (u32, u32) = (0,0);    // We want our bounding_boxes to be of equal size.
 
     for y in 0..image.height{
         for x in 0..image.width{
             let index = rgb_to_index(image.data[cur_ind], image.data[cur_ind + 1], image.data[cur_ind + 2]);
-            cur_ind += image.skip;
+            cur_ind += BYTES_PER_PIXEL as usize;
 
             while index >= bounding_boxes.len(){
                 bounding_boxes.push(None);
@@ -126,6 +146,10 @@ fn draw_bounding_boxes(image: &RawImage) -> Vec<BoundingBox>{
                         else if bb.bot < y{
                             bb.bot = y
                         }
+
+                        if bb.bot - bb.top > max_bb_size.1{
+                            max_bb_size = (max_bb_size.0, bb.bot - bb.top);
+                        }
                         
                         if bb.left > x{
                             bb.left = x
@@ -133,12 +157,20 @@ fn draw_bounding_boxes(image: &RawImage) -> Vec<BoundingBox>{
                         else if bb.right < x{
                             bb.right = x
                         }
+
+                        if bb.right - bb.left > max_bb_size.0{
+                            max_bb_size = (bb.right - bb.left, max_bb_size.1);
+                        }
+
                     },
                     None => *bb_opt = Some(BoundingBox{top: y, bot: y, left: x, right: x})  
                 }
             }
         }
     }
+
+    // Now time to readjust our bounding boxes to all be the same size.
+    // TODO
 
     return bounding_boxes.iter().map(|x| {
         match x{

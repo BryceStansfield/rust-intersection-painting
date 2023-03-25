@@ -30,6 +30,9 @@ pub struct DynamicCommand{
     /// Output Path, folder or file
     pub output: PathBuf,
 
+    /// Alpha averaging enabled?
+    pub alpha_averaging: bool,
+
     #[clap(subcommand)]
     pub generator: Generator,
 }
@@ -38,6 +41,9 @@ pub struct DynamicCommand{
 pub struct StaticCommand{
     /// Stencil Path
     pub stencil: PathBuf,
+
+    /// Alpha averaging enabled?
+    pub alpha_averaging: bool,
 
     /// Input Path
     pub input: PathBuf,
@@ -65,7 +71,8 @@ pub struct GenerateStencilCommand{
 pub enum Generator{
     SquareGrid(SquareGridCommand),
     CircleGrid(CircleGridCommand),
-    CrossGrid(CrossGridCommand)
+    CrossGrid(CrossGridCommand),
+    MaskGrid(MaskGridCommand)
 }
 
 #[derive(Debug, Args)]
@@ -81,4 +88,9 @@ pub struct CircleGridCommand{
 #[derive(Debug, Args)]
 pub struct CrossGridCommand{
     pub cross_intersection_width: u32
+}
+
+#[derive(Debug, Args)]
+pub struct MaskGridCommand{
+    pub mask_folder: PathBuf
 }

@@ -1,7 +1,11 @@
 use core::fmt;
 use std::path::PathBuf;
 
-use crate::{RawImage, args, save_raw_image};
+use itertools::Itertools;
+
+use crate::{RawImage, args, save_raw_image, image_tools};
+
+pub const BYTES_PER_PIXEL: u32 = 4;         // Wgpu doesn't support 24 bit colours.
 
 // Commands
 pub fn generate_and_save_stencil(width: u32, height: u32, out_path: PathBuf, generator: args::Generator){
@@ -11,15 +15,14 @@ pub fn generate_and_save_stencil(width: u32, height: u32, out_path: PathBuf, gen
 
 pub fn generate_stencil(width: u32, height: u32, generator: &args::Generator) -> RawImage{
     RawImage{
-        skip: 3,
         width,
         height,
         data: match generator{
             args::Generator::SquareGrid(args::SquareGridCommand{side_length: s}) => generate_square_grid(width, height, *s, 0),
             args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, *r),
-            args::Generator::CrossGrid(args::CrossGridCommand{cross_intersection_width}) => generate_cross_grid(width, height, *cross_intersection_width)
+            args::Generator::CrossGrid(args::CrossGridCommand{cross_intersection_width}) => generate_cross_grid(width, height, *cross_intersection_width),
+            args::Generator::MaskGrid(args::MaskGridCommand{mask_folder}) => generate_from_masks(width, height, mask_folder)
         },
-        has_alpha: false
     }
 }
 
@@ -30,9 +33,9 @@ fn segment_index_to_rgb(ind: u32) -> (u8, u8, u8){
 
 // Generators
 fn generate_square_grid(width: u32, height: u32, side_length: u32, start_at: u32) -> Vec<u8>{
-    let mut container = vec![0 as u8; (width as usize)*(height as usize)*3];
+    let mut container = vec![0 as u8; (width as usize)*(height as usize)*BYTES_PER_PIXEL as usize];
 
-    let squares_per_row = ((width as f32)/(side_length as f32)).ceil() as u32;
+    let squares_per_row = num::Integer::div_ceil(&width, &side_length);
 
     let mut container_ind: u32 = 0;
 
@@ -48,7 +51,7 @@ fn generate_square_grid(width: u32, height: u32, side_length: u32, start_at: u32
             container[container_ind as usize] = segment_rgb.0;
             container[(container_ind + 1) as usize] = segment_rgb.1;
             container[(container_ind + 2) as usize] = segment_rgb.2;
-            container_ind += 3;
+            container_ind += BYTES_PER_PIXEL;
         }
     }
 
@@ -153,7 +156,7 @@ fn generate_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
 }
 
 fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -> Vec<u8>{
-    let mut container = vec![0 as u8; (width as usize) * (height as usize) * 3];
+    let mut container = vec![0 as u8; (width as usize) * (height as usize) * BYTES_PER_PIXEL as usize];
     let grid_width = num::Integer::div_ceil(&width, &cross_intersection_width);
     let grid_height = num::Integer::div_ceil(&height, &cross_intersection_width);
 
@@ -190,9 +193,9 @@ fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -
                     continue;
                 }
 
-                container[((cur_x + width * cur_y) * 3) as usize] = index_pixels.0;
-                container[((cur_x + width * cur_y) * 3 + 1) as usize] = index_pixels.1;
-                container[((cur_x + width * cur_y) * 3 + 2) as usize] = index_pixels.2;
+                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL) as usize] = index_pixels.0;
+                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL + 1) as usize] = index_pixels.1;
+                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL + 2) as usize] = index_pixels.2;
             }
         }
     };
@@ -269,6 +272,73 @@ fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -
     return container;
 }
 
+fn generate_from_masks(width: u32, height: u32, mask_folder_path: &PathBuf) -> Vec<u8>{
+    let mut masks: Vec<Vec<Vec<bool>>> = vec![];
+
+    for (_, image) in image_tools::DynamicImageFolderIterator::new(mask_folder_path){
+        match image{
+            image::DynamicImage::ImageLuma8(greyscale_im) => {
+                if !masks.is_empty() && (greyscale_im.width() as usize != masks[0][0].len() || greyscale_im.height() as usize != masks[0].len()){
+                    panic!("All mask images must be the same size")
+                }
+
+                let mut bool_mask: Vec<Vec<bool>> = vec![vec![false; greyscale_im.width() as usize]; greyscale_im.height() as usize];
+
+                for (x, y, pixel) in greyscale_im.enumerate_pixels(){
+                    bool_mask[y as usize][x as usize] = if pixel.0[0] == 0 { false } else { true };
+                }
+
+                masks.push(bool_mask);
+            }
+            _ => panic!("Mask Images should be 8-bit greyscale without alpha")
+        }
+    }
+
+    let mask_width = masks[0][0].len() as u32;
+    let mask_height = masks[0].len() as u32;
+    
+    // Should we start at 0 or 1?
+    let mut start = 0;
+    
+    for (y, x) in itertools::iproduct!((0..mask_height), (0..mask_width)){
+        if masks.iter().all(|mask| !mask[y as usize][x as usize]){
+            start = 1;
+            break
+        }
+    }
+
+    // Now let's tile the masks!
+    let segments_per_row = num::Integer::div_ceil(&width, &mask_width) as u32;
+    let segments_per_mask = (num::Integer::div_ceil(&height, &mask_height) * segments_per_row) as u32;
+
+    let mut cur_index = start;
+    let mut container = vec![0 as u8; (BYTES_PER_PIXEL * width * height) as usize];
+
+    for mask in masks{
+        let mut container_ind = 0;
+
+        for y in 0..height{
+            for x in 0..width{
+                if mask[(y % mask_height) as usize][(x % mask_height) as usize]{
+                    let segment_x = x/mask_width;
+                    let segment_y = y/mask_height;
+                    
+                    let segment_index = (start + segment_x + segments_per_row * segment_y);        // TODO: Remove *10
+                    let segment_rgb = segment_index_to_rgb(segment_index);
+
+                    container[container_ind as usize] = segment_rgb.0;
+                    container[(container_ind + 1) as usize] = segment_rgb.1;
+                    container[(container_ind + 2) as usize] = segment_rgb.2;
+                }
+                container_ind += BYTES_PER_PIXEL;
+            }
+        }    
+        start += segments_per_mask;
+    }
+
+    return container;
+}
+
 
 // Utility functions
 #[derive(Debug)]
@@ -293,15 +363,15 @@ fn repeat_stencil_to_mask(stencil: Vec<Vec<bool>>, width: u32, height: u32) -> V
 
 fn mask_container(bool_mask: Vec<bool>, false_value: (u8,u8, u8), container: &mut Vec<u8>) -> Result<(), MaskingError>{
     // Masks `container` s.t. if bool_mask[i] == false, then pixel[i] = false_value;
-    if container.len() != 3*bool_mask.len(){
+    if container.len() != BYTES_PER_PIXEL as usize*bool_mask.len(){
         return Err(MaskingError::LengthMismatch);
     }
 
     for i in 0..bool_mask.len(){
         if !bool_mask[i]{
-            container[3*i] = false_value.0;
-            container[3*i + 1] = false_value.1;
-            container[3*i + 2] = false_value.2;
+            container[BYTES_PER_PIXEL as usize*i] = false_value.0;
+            container[BYTES_PER_PIXEL as usize*i + 1] = false_value.1;
+            container[BYTES_PER_PIXEL as usize*i + 2] = false_value.2;
         }
     }
 
