@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{
     Args,
     Parser,
-    Subcommand
+    Subcommand,
 };
 
 #[derive(Debug, Parser)]
@@ -31,6 +31,7 @@ pub struct DynamicCommand{
     pub output: PathBuf,
 
     /// Alpha averaging enabled?
+    #[arg(short, long)]
     pub alpha_averaging: bool,
 
     #[clap(subcommand)]
@@ -43,6 +44,7 @@ pub struct StaticCommand{
     pub stencil: PathBuf,
 
     /// Alpha averaging enabled?
+    #[arg(short, long)]
     pub alpha_averaging: bool,
 
     /// Input Path

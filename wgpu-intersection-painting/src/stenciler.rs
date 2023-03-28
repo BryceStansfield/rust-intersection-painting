@@ -60,7 +60,7 @@ fn cpu_averager(grid_image: &RawImage, num_segments: usize, alpha_averaging: boo
                 count_vec[segment_index] += 1
             }
             else{
-                if line_image.data[line_index + 3] != 255{
+                if line_image.data[line_index + 3] != 0{
                     sum_vec[sum_index] += line_image.data[line_index] as u64;
                     sum_vec[sum_index + 1] += line_image.data[line_index + 1] as u64;
                     sum_vec[sum_index + 2] += line_image.data[line_index + 2] as u64;
