@@ -73,6 +73,7 @@ pub struct GenerateStencilCommand{
 pub enum Generator{
     SquareGrid(SquareGridCommand),
     CircleGrid(CircleGridCommand),
+    ConcentricCircleGrid(ConcentricCircleGridCommand),
     CrossGrid(CrossGridCommand),
     MaskGrid(MaskGridCommand)
 }
@@ -86,6 +87,12 @@ pub struct SquareGridCommand{
 pub struct CircleGridCommand{
     pub radius: u32
 }
+
+#[derive(Debug, Args)]
+pub struct ConcentricCircleGridCommand{
+    pub radius: u32
+}
+
 
 #[derive(Debug, Args)]
 pub struct CrossGridCommand{

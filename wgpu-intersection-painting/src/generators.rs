@@ -20,6 +20,7 @@ pub fn generate_stencil(width: u32, height: u32, generator: &args::Generator) ->
         data: match generator{
             args::Generator::SquareGrid(args::SquareGridCommand{side_length: s}) => generate_square_grid(width, height, *s, 0),
             args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, *r),
+            args::Generator::ConcentricCircleGrid(args::ConcentricCircleGridCommand{radius: r}) => generate_concentric_circle_grid(width, height, *r),
             args::Generator::CrossGrid(args::CrossGridCommand{cross_intersection_width}) => generate_cross_grid(width, height, *cross_intersection_width),
             args::Generator::MaskGrid(args::MaskGridCommand{mask_folder}) => generate_from_masks(width, height, mask_folder)
         },
@@ -46,12 +47,7 @@ fn generate_square_grid(width: u32, height: u32, side_length: u32, start_at: u32
             let square_y = y/side_length;
 
             let segment_index = square_x + square_y * squares_per_row + start_at;
-            let segment_rgb = segment_index_to_rgb(segment_index);
-
-            container[container_ind as usize] = segment_rgb.0;
-            container[(container_ind + 1) as usize] = segment_rgb.1;
-            container[(container_ind + 2) as usize] = segment_rgb.2;
-            container_ind += BYTES_PER_PIXEL;
+            container_ind = fill_pixel_with_segindex(&mut container, container_ind, segment_index);
         }
     }
 
@@ -179,8 +175,6 @@ fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -
         let start_x = u_cell_x * cross_intersection_width;
         let start_y = u_cell_y * cross_intersection_width;
 
-        let index_pixels = segment_index_to_rgb(index);
-
         for x in 0..cross_intersection_width{
             for y in 0..cross_intersection_width{
                 let cur_x = start_x + x;
@@ -193,9 +187,7 @@ fn generate_cross_grid(width: u32, height: u32, cross_intersection_width: u32) -
                     continue;
                 }
 
-                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL) as usize] = index_pixels.0;
-                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL + 1) as usize] = index_pixels.1;
-                container[((cur_x + width * cur_y) * BYTES_PER_PIXEL + 2) as usize] = index_pixels.2;
+                fill_pixel_with_segindex(&mut container, (cur_x + width * cur_y) * BYTES_PER_PIXEL, index);
             }
         }
     };
@@ -311,11 +303,10 @@ fn generate_from_masks(width: u32, height: u32, mask_folder_path: &PathBuf) -> V
     let segments_per_row = num::Integer::div_ceil(&width, &mask_width) as u32;
     let segments_per_mask = (num::Integer::div_ceil(&height, &mask_height) * segments_per_row) as u32;
 
-    let mut cur_index = start;
     let mut container = vec![0 as u8; (BYTES_PER_PIXEL * width * height) as usize];
 
     for mask in masks{
-        let mut container_ind = 0;
+        let mut pixel_index = 0;
 
         for y in 0..height{
             for x in 0..width{
@@ -324,19 +315,33 @@ fn generate_from_masks(width: u32, height: u32, mask_folder_path: &PathBuf) -> V
                     let segment_y = y/mask_height;
                     
                     let segment_index = (start + segment_x + segments_per_row * segment_y);        // TODO: Remove *10
-                    let segment_rgb = segment_index_to_rgb(segment_index);
 
-                    container[container_ind as usize] = segment_rgb.0;
-                    container[(container_ind + 1) as usize] = segment_rgb.1;
-                    container[(container_ind + 2) as usize] = segment_rgb.2;
+                    fill_pixel_with_segindex(&mut container, pixel_index, segment_index);
                 }
-                container_ind += BYTES_PER_PIXEL;
+                pixel_index += BYTES_PER_PIXEL;
             }
         }    
         start += segments_per_mask;
     }
 
     return container;
+}
+
+fn generate_concentric_circle_grid(width: u32, height: u32, radius: u32) -> Vec<u8>{
+    let mut ret_vector = vec![0 as u8; (BYTES_PER_PIXEL as usize) * (height as usize) * (width as usize)];
+
+    let mut pixel_start_index: u32 = 0;
+    for y in 0..height{
+        for x in 0..width{
+            // TODO: Rewrite to fill 4 pixels per sqrt or to use circle drawing algorithm.
+            let dist = ((x as f32 - (width as f32/2.0)).powi(2) + (y as f32 - (height as f32/2.0)).powi(2)).sqrt();
+
+            let segment_index = (dist/(radius as f32)).floor() as u32;
+            pixel_start_index = fill_pixel_with_segindex(&mut ret_vector, pixel_start_index, segment_index);
+        }
+    }
+
+    return ret_vector;
 }
 
 
@@ -376,4 +381,14 @@ fn mask_container(bool_mask: Vec<bool>, false_value: (u8,u8, u8), container: &mu
     }
 
     return Ok(());
+}
+
+#[inline]
+fn fill_pixel_with_segindex(container: &mut Vec<u8>, pixel_start_index: u32, segment_index: u32) -> u32{
+    let segment_color = segment_index_to_rgb(segment_index);
+    container[pixel_start_index as usize] = segment_color.0;
+    container[pixel_start_index as usize + 1] = segment_color.1;
+    container[pixel_start_index as usize + 2] = segment_color.2;
+    container[pixel_start_index as usize + 3] = 255;
+    return pixel_start_index + BYTES_PER_PIXEL;
 }
