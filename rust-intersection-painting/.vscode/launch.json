@@ -1,0 +1,81 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'wgpu-intersection-painting'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wgpu-intersection-painting",
+                    "--package=wgpu-intersection-painting"
+                ],
+                "filter": {
+                    "name": "wgpu-intersection-painting",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Cross Generation Debugging",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wgpu-intersection-painting",
+                    "--package=wgpu-intersection-painting"
+                ],
+                "filter": {
+                    "name": "wgpu-intersection-painting",
+                    "kind": "bin"
+                }
+            },
+            "args": ["generate-stencil", "1920", "1080", "cross_out.png", "cross-grid", "10"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "1x1 square alpha debugging",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=wgpu-intersection-painting",
+                    "--package=wgpu-intersection-painting"
+                ],
+                "filter": {
+                    "name": "wgpu-intersection-painting",
+                    "kind": "bin"
+                }
+            },
+            "args": ["dynamic", ".\\src\\test_images\\in_test_folder\\4x4AlphaTest.png", ".\\src\\test_images\\out_test_folder\\4x4AlphaTest.png", "square-grid", "1"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'wgpu-intersection-painting'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=wgpu-intersection-painting",
+                    "--package=wgpu-intersection-painting"
+                ],
+                "filter": {
+                    "name": "wgpu-intersection-painting",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

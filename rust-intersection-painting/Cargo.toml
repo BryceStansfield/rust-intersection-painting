@@ -1,5 +1,5 @@
 [package]
-name = "wgpu-intersection-painting"
+name = "rust-intersection-painting"
 version = "0.1.0"
 edition = "2021"
 
