@@ -170,13 +170,41 @@ fn draw_bounding_boxes(image: &RawImage) -> Vec<BoundingBox>{
         }
     }
 
-    // Now time to readjust our bounding boxes to all be the same size.
-    // TODO
-
-    return bounding_boxes.iter().map(|x| {
+    let mut bounding_boxes: Vec<BoundingBox> = bounding_boxes.iter().map(|x| {
         match x{
             Some(bb) => *bb,
             None => panic!("Not all indicies have been defined"),
         }
     }).collect();
+
+    // Now time to readjust our bounding boxes to all be the same size.
+    // TODO: Is this strictly neccessary? Seems like it shouldn't be.
+    for bb in bounding_boxes.iter_mut(){
+        // Adjusting the y axis.
+        let y_size_dist = (bb.bot - bb.top) - max_bb_size.1;
+        if y_size_dist != 0{
+            if bb.top >= y_size_dist{
+                bb.top -= y_size_dist;
+            }
+            else{
+                bb.top = 0;
+                bb.bot += y_size_dist - bb.top;
+            }
+        }
+
+        // Adjusting the x axis.
+        let x_size_dist = (bb.right - bb.left) - max_bb_size.0;
+        if x_size_dist != 0{
+            if bb.left >= x_size_dist{
+                bb.left -= x_size_dist;
+            }
+            else{
+                bb.left = 0;
+                bb.right += x_size_dist - bb.left;
+            }
+        }
+
+    }
+
+    return bounding_boxes;
 }
