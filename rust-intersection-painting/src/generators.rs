@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use itertools::Itertools;
 
-use crate::{RawImage, args, save_raw_image, image_tools};
+use crate::{RawImage, args, save_raw_image, image_tools, stenciler::{rgb_to_index}};
 
 pub const BYTES_PER_PIXEL: u32 = 4;         // Wgpu doesn't support 24 bit colours.
 
@@ -344,6 +344,51 @@ fn generate_concentric_circle_grid(width: u32, height: u32, radius: u32) -> Vec<
     return ret_vector;
 }
 
+fn fill_bucket_grid(input_im: RawImage) -> Vec<u8>{
+    let mut is_filled = vec![false; (input_im.height * input_im.width) as usize];
+    let mut ret_vector = vec![0 as u8; (BYTES_PER_PIXEL as usize) * (input_im.height as usize) * (input_im.width as usize)];
+
+    let mut fill_from = |start_x: u32, start_y: u32, colour_ind: u32, is_filled: &Vec<bool>|{
+        if start_x < 0 || start_y < 0 || start_x >= input_im.width || start_y >= input_im.height{
+            return;
+        }
+
+        let start_im_index = x_y_to_index(input_im.width, start_x, start_y);
+        let start_segment_index = rgb_to_index(input_im.data[start_im_index as usize], input_im.data[start_im_index as usize + 1], input_im.data[start_im_index as usize + 2]);
+        let mut to_fill: Vec<(u32, u32)> = vec![];
+        to_fill.push((start_x, start_y));
+
+        let mut inner_lop = |to_fill: &mut Vec<(u32, u32)>, fill_pos: (u32, u32)|{
+            let image_index = x_y_to_index(input_im.width, fill_pos.0, fill_pos.1);
+
+            if !is_filled[(fill_pos.0 + input_im.height * fill_pos.1) as usize] && rgb_to_index(input_im.data[image_index as usize], input_im.data[image_index as usize + 1], input_im.data[image_index as usize + 2]) == start_segment_index{
+                fill_pixel_with_segindex(&mut ret_vector, image_index as u32, colour_ind);
+                is_filled[(fill_pos.0 + input_im.height * fill_pos.1) as usize] = true;
+
+                to_fill.push((fill_pos.0, fill_pos.1 - 1));
+                to_fill.push((fill_pos.0, fill_pos.1 + 1));
+                to_fill.push((fill_pos.0 - 1, fill_pos.1));
+                to_fill.push((fill_pos.0 + 1, fill_pos.1));
+            }
+        };
+
+        while let Some(pos) = to_fill.pop(){
+            inner_lop(&mut to_fill, pos);
+        }
+    };
+
+    let mut segment_index: u32 = 0;
+    for y in 0..input_im.height{
+        for x in 0..input_im.width{
+            if !is_filled[(x + input_im.height * y) as usize]{
+                fill_from(x, y, segment_index, &is_filled);
+                segment_index += 1;    
+            }
+        }
+    }
+    
+    return ret_vector;
+}
 
 // Utility functions
 #[derive(Debug)]
@@ -391,4 +436,9 @@ fn fill_pixel_with_segindex(container: &mut Vec<u8>, pixel_start_index: u32, seg
     container[pixel_start_index as usize + 2] = segment_color.2;
     container[pixel_start_index as usize + 3] = 255;
     return pixel_start_index + BYTES_PER_PIXEL;
+}
+
+#[inline]
+fn x_y_to_index(width: u32, x: u32, y: u32) -> u32{
+    return x + y * width * BYTES_PER_PIXEL;
 }
