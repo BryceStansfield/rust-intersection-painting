@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'wgpu-intersection-painting'",
+            "name": "Debug executable 'rust-intersection-painting'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=wgpu-intersection-painting",
-                    "--package=wgpu-intersection-painting"
+                    "--bin=rust-intersection-painting",
+                    "--package=rust-intersection-painting"
                 ],
                 "filter": {
-                    "name": "wgpu-intersection-painting",
+                    "name": "rust-intersection-painting",
                     "kind": "bin"
                 }
             },
@@ -29,11 +29,11 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=wgpu-intersection-painting",
-                    "--package=wgpu-intersection-painting"
+                    "--bin=rust-intersection-painting",
+                    "--package=rust-intersection-painting"
                 ],
                 "filter": {
-                    "name": "wgpu-intersection-painting",
+                    "name": "rust-intersection-painting",
                     "kind": "bin"
                 }
             },
@@ -43,15 +43,33 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Flood Fill BW Test",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust-intersection-painting",
+                    "--package=rust-intersection-painting"
+                ],
+                "filter": {
+                    "name": "rust-intersection-painting",
+                    "kind": "bin"
+                }
+            },
+            "args": ["generate-stencil", "1920", "1080", ".\\src\\out.png", "flood-fill", ".\\src\\test_images\\Fill_Test.png"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "1x1 square alpha debugging",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=wgpu-intersection-painting",
-                    "--package=wgpu-intersection-painting"
+                    "--bin=rust-intersection-painting",
+                    "--package=rust-intersection-painting"
                 ],
                 "filter": {
-                    "name": "wgpu-intersection-painting",
+                    "name": "rust-intersection-painting",
                     "kind": "bin"
                 }
             },
@@ -61,16 +79,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'wgpu-intersection-painting'",
+            "name": "Debug unit tests in executable 'rust-intersection-painting'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=wgpu-intersection-painting",
-                    "--package=wgpu-intersection-painting"
+                    "--bin=rust-intersection-painting",
+                    "--package=rust-intersection-painting"
                 ],
                 "filter": {
-                    "name": "wgpu-intersection-painting",
+                    "name": "rust-intersection-painting",
                     "kind": "bin"
                 }
             },

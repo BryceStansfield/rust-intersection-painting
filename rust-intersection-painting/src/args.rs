@@ -75,7 +75,8 @@ pub enum Generator{
     CircleGrid(CircleGridCommand),
     ConcentricCircleGrid(ConcentricCircleGridCommand),
     CrossGrid(CrossGridCommand),
-    MaskGrid(MaskGridCommand)
+    MaskGrid(MaskGridCommand),
+    FloodFill(FloodFillCommand)
 }
 
 #[derive(Debug, Args)]
@@ -102,4 +103,9 @@ pub struct CrossGridCommand{
 #[derive(Debug, Args)]
 pub struct MaskGridCommand{
     pub mask_folder: PathBuf
+}
+
+#[derive(Debug, Args)]
+pub struct FloodFillCommand{
+    pub mask_path: PathBuf
 }

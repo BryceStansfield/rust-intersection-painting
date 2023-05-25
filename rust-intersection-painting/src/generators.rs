@@ -22,7 +22,9 @@ pub fn generate_stencil(width: u32, height: u32, generator: &args::Generator) ->
             args::Generator::CircleGrid(args::CircleGridCommand{radius: r}) => generate_circle_grid(width, height, *r),
             args::Generator::ConcentricCircleGrid(args::ConcentricCircleGridCommand{radius: r}) => generate_concentric_circle_grid(width, height, *r),
             args::Generator::CrossGrid(args::CrossGridCommand{cross_intersection_width}) => generate_cross_grid(width, height, *cross_intersection_width),
-            args::Generator::MaskGrid(args::MaskGridCommand{mask_folder}) => generate_from_masks(width, height, mask_folder)
+            args::Generator::MaskGrid(args::MaskGridCommand{mask_folder}) => generate_from_masks(width, height, mask_folder),
+            args::Generator::FloodFill(args::FloodFillCommand{mask_path}) => generate_fill_bucket(mask_path.to_owned())
+
         },
     }
 }
@@ -344,12 +346,16 @@ fn generate_concentric_circle_grid(width: u32, height: u32, radius: u32) -> Vec<
     return ret_vector;
 }
 
+fn generate_fill_bucket(mask_path: PathBuf) -> Vec<u8>{
+    return fill_bucket_grid(image_tools::get_raw_image(mask_path));
+}
+
 fn fill_bucket_grid(input_im: RawImage) -> Vec<u8>{
     let mut is_filled = vec![false; (input_im.height * input_im.width) as usize];
     let mut ret_vector = vec![0 as u8; (BYTES_PER_PIXEL as usize) * (input_im.height as usize) * (input_im.width as usize)];
 
-    let mut fill_from = |start_x: u32, start_y: u32, colour_ind: u32, is_filled: &Vec<bool>|{
-        if start_x < 0 || start_y < 0 || start_x >= input_im.width || start_y >= input_im.height{
+    let mut fill_from = |start_x: u32, start_y: u32, colour_ind: u32, is_filled: &mut Vec<bool>|{
+        if start_x >= input_im.width || start_y >= input_im.height{
             return;
         }
 
@@ -365,9 +371,14 @@ fn fill_bucket_grid(input_im: RawImage) -> Vec<u8>{
                 fill_pixel_with_segindex(&mut ret_vector, image_index as u32, colour_ind);
                 is_filled[(fill_pos.0 + input_im.height * fill_pos.1) as usize] = true;
 
-                to_fill.push((fill_pos.0, fill_pos.1 - 1));
+                if fill_pos.1 >= 1{
+                    to_fill.push((fill_pos.0, fill_pos.1 - 1));
+                }
                 to_fill.push((fill_pos.0, fill_pos.1 + 1));
-                to_fill.push((fill_pos.0 - 1, fill_pos.1));
+
+                if fill_pos.0 >= 1{
+                    to_fill.push((fill_pos.0 - 1, fill_pos.1));
+                }
                 to_fill.push((fill_pos.0 + 1, fill_pos.1));
             }
         };
@@ -381,7 +392,7 @@ fn fill_bucket_grid(input_im: RawImage) -> Vec<u8>{
     for y in 0..input_im.height{
         for x in 0..input_im.width{
             if !is_filled[(x + input_im.height * y) as usize]{
-                fill_from(x, y, segment_index, &is_filled);
+                fill_from(x, y, segment_index, &mut is_filled);
                 segment_index += 1;    
             }
         }
